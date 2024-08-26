@@ -1,0 +1,1000 @@
+---
+title: "Engagement en IG de Tenistas ATP"
+subtitle: "Datos: tenistas + posts + imágenes"
+date: "`r paste0('Versión: ', format(Sys.time(), '%d-%b-%Y   %H:%M:%S'))`"
+output: html_document
+
+knit: (function(inputFile, encoding) { 
+    rmarkdown::render(
+        inputFile, encoding = encoding, 
+        output_file = 'C:/Users/pvill/OneDrive/Documentos/TFG INTEGRADO/Resultados_R/GuiaMemoriaConLIWC.html') 
+    })
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+library(lmerTest)
+library(ggplot2)
+library(lattice)
+library(ggpubr)       # 'ggplot2' Based Publication Ready Plots
+library(moments)      # for computing skewness
+library(sjPlot)
+library(car)          # función: qqPlot, durbinWatsonTest, outlierTest
+library(lmtest)       # función: bptest, gqtest
+library(corrplot)
+library(descr)
+library(psych)
+library(dplyr)        # funciones de dataframes
+library(stargazer)
+library(modelsummary)
+library(broom)
+library(kableExtra)
+```
+
+
+# Datos
+
+## Carga de datos
+
+```{r}
+datos = read.csv("C:/Users/pvill/OneDrive/Documentos/TFG INTEGRADO/English_LIWC.csv")
+```
+
+Se han cargado `r dim(datos)[1]` filas y `r dim(datos)[2]` columnas. 
+
+* Cambiamos el nombre a la variable de los instrumentos de tenis.
+
+* Reordenamos las variables.
+
+* Quitamos las filas que tengan -1 en los likes (hay `r length(datos$likes[datos$likes<0])`).
+
+
+```{r}
+
+datos <- datos %>% 
+  rename(tennis.instruments = type) %>%
+  select(-c(post, shortcode, Marcas.Jugador)) %>%
+  relocate(likes:comentarios, .after = ID) %>%
+  relocate(publicaciones:following, .after = username) %>%
+  relocate(Puntos:Head, .after = username) %>%
+  relocate(franja_horaria, .after = hora) %>%
+  relocate(video, .after= hashtags ) %>%
+  relocate(weekend, .after = fecha) %>%
+  relocate(Australian_Open:US_Open, .after = weekend) %>%
+  relocate(num_hashtags:idioma, .after = sponsors) %>%
+  relocate(num_hashtags:word_count, .after = sponsors)
+
+datos <- datos[datos$likes > 0, ]
+
+```
+
+Nos hemos quedado con **`r dim(datos)[1]` filas** y `r dim(datos)[2]` columnas. Las columnas del dataframe quedan del siguiente modo:
+
+```{r}
+colnames(datos)
+```
+
+## Preprocesamiento
+
+* Cambiamos Puntos de texto a número.
+
+* En la Edad, tenemos `r sum(is.na(datos$Edad))` celdas vacías. Las vamos a llenar con la edad media.
+
+* En texto.detectado y tennis.instruments, pasamos del string a 1/0.
+
+* Establecemos la emoción neutra como referencia.
+
+* Ordenamos las categorías de franja_horaria.
+
+```{r}
+
+# PUNTOS
+datos$Puntos <- gsub(",", "", datos$Puntos)
+datos$Puntos <- as.numeric(datos$Puntos)
+# EDAD
+datos$Edad[is.na(datos$Edad)] <- mean(datos$Edad, na.rm = TRUE)
+# TRANSFORMACIÓN DE texto.detectado
+datos$texto.detectado <- ifelse(datos$texto.detectado == "SÍ", 1, 0)
+# TRANSFORMACIÓN DE tennis.instruments 
+datos$tennis.instruments <- ifelse(datos$tennis.instruments == "with tennis instruments", 1, 0)
+# REFERENCIA DE emocion
+datos$emocion <- factor(datos$emocion, levels = c('neutral', 'happy', 'surprise', 'fear', 'disgust', 'angry', 'sad'))
+
+# ORDENACIÓN DE franja_horaria
+datos$franja_horaria <- factor(datos$franja_horaria, levels = c('Mañana', 'Tarde', 'Noche'))
+
+```
+
+## Exploración de las variables categóricas
+
+Se presentan a continuación los diagramas de caja y bigotes de las variables categóricas sobre los likes y los comentarios. Puesto que estas dos variables tienen una gran dispersión, se han excluido de los diagramas los valores que están más allá de los bigotes, es decir, sin los valores atípicos. 
+
+```{r}
+
+par(mfrow = c(1, 2))
+
+lista_variables <- c('tennis.instruments', 'Nike', "Wilson", "Yonex", "Adidas", "Asics", "Head", "weekend", "Australian_Open", "Roland_Garros", "Wimbledon", "US_Open", 'texto.detectado', 'video')
+
+for (variable in lista_variables){
+  boxplot(likes ~ (eval(parse(text = variable))), col=c("white","lightgray"), datos, main = 'likes', xlab = variable, outline = FALSE)
+  boxplot(comentarios ~ (eval(parse(text = variable))), col=c("white","lightgray"), datos, main = 'comentarios', xlab = variable, outline = FALSE)
+}
+
+boxplot(likes ~ is_sponsored, col=c("white","lightgray","darkgray"), datos, main = 'likes', outline = FALSE)
+boxplot(comentarios ~ is_sponsored, col=c("white","lightgray","darkgray"), datos, main = 'comentarios', outline = FALSE)
+
+boxplot(likes ~ franja_horaria, col=c("white","lightgray","darkgray"), datos, main = 'likes', outline = FALSE)
+boxplot(comentarios ~ franja_horaria, col=c("white","lightgray","darkgray"), datos, main = 'comentarios', outline = FALSE)
+
+```
+
+```{r, include=FALSE}
+par(mfrow = c(1, 1))
+```
+
+
+```{r}
+boxplot(likes ~ emocion, col=c("white","lightgray","darkgray"), datos, main = 'likes', outline = FALSE)
+boxplot(comentarios ~ emocion, col=c("white","lightgray","darkgray"), datos, main = 'comentarios', outline = FALSE)
+```
+
+## Preprocesamiento de las variables continuas
+
+### Estadísticas Descriptivas
+
+```{r, results='asis'}
+lista <- c("idioma" , "Segment","WC", "Analytic", "Clout", "Authentic", "Tone", "Affect", "emotion", "emo_anx", "emo_anger", "emo_sad", "swear", "Social", "socbehav", "conflict", "moral", "comm", "socrefs", "family", "friend", "female", "male", "Culture", "politic",  "ethnicity", "tech", "leisure", "home", "work", "money", "relig", "Physical", "illness", "wellness", "mental", "substances", "sexual", "food", "death")
+
+datos <- select(datos, -all_of(lista))
+
+x <- describe(select(datos, -ID), ranges = TRUE, omit = TRUE) %>% 
+  select(-c(trimmed, mad, range, se))
+knitr::kable(x, digits = 3)
+```
+
+Teniendo en cuenta que "As a general guideline, a skewness value between −1 and +1 is considered excellent, but a value between −2 and +2 is generally considered acceptable. Values beyond −2 and +2 are considered indicative of substantial nonnormality." (Hair et al., 2022, p. 66)", vamos a tener que tratar algunas variables, especialmente likes, comentarios, Premio.monetario, los followers, los following y los rostros.
+
+### Matriz de Correlaciones entre las variables continuas
+
+```{r}
+lista_variables_continuas <- c('likes', 'comentarios', "Puntos","Premio.monetario", "Edad", "publicaciones","followers", "following", "num_hashtags","num_mentions", "num_emojis", "word_count", 'rostros', "tone_pos", "tone_neg", "emo_pos", "emo_neg", "prosocial", "polite", "Lifestyle", "health")
+#corrplot(cor(select(datos, all_of(lista_variables_continuas))), method = "color", type = "upper", order = "hclust", addCoef.col = "black", tl.col = "black", tl.srt = 45)
+#matrix <- cor(select(datos, all_of(lista_variables_continuas)))
+cor_matrix <- cor(select(datos, all_of(lista_variables_continuas)))
+
+# Ajustar el tamaño de la ventana gráfica
+par(cex.main=0.8, cex.lab=0.8, cex.axis=0.7, mar=c(0, 0, 0, 0) + 0.5)
+
+# Ajustar los parámetros del gráfico
+corrplot(cor_matrix, 
+         method = "color", 
+         type = "upper", 
+         order = "hclust", 
+         addCoef.col = "black", 
+         tl.col = "black", 
+         tl.srt = 45, 
+         tl.cex = 0.6,  # Tamaño de las etiquetas
+         cl.cex = 0.8,  # Tamaño de la leyenda
+         number.cex = 0.5)  # Tamaño de los coeficientes
+```
+
+La matriz está ordenada de más correlación a menos correlación. Por ese motivo no sigue el orden que le hemos dado. 
+
+Hay dos parejas de valores con altas correlaciones. Uno es *Puntos* y *Premio.monetario*, y el otro es *likes* y *comentarios*. Ambas correlaciones se sitúan en **0.87**. La segunda pareja no es problemática, porque son las variables dependientes. Pero la segunda indica que hay una correlación entre variables independientes. Por tanto, para nuestros modelos solo vamos a trabajar con **Puntos**.
+
+### LIWC
+
+Al añadir las nuevas variables de LIWC, podemos destacar 4 variables: tone_pos/emo_pos, prosocial/polite. No están altamente correlacionadas, encontramos un valor de 0.6 y 0.5, respectivamente. 
+
+### Exploración de las variables continuas
+
+Vamos a probar dos transformaciones: la raíz cuadrada y la logarítmica. Para estas transformadas, y también para el original, evaluamos la skewness.
+
+
+```{r, results='asis'}
+
+lista_variables = c('likes', 'comentarios', 'Puntos', 'Edad', 'publicaciones', 'followers', 'following', 'num_hashtags', 'num_mentions', 'num_emojis', 'rostros', 'word_count',"tone_pos", "tone_neg", "emo_pos", "emo_neg", "prosocial", "polite", "Lifestyle", "health")
+
+for (variable in lista_variables){
+  cat(paste0('\n\n#### ', variable, '\n\n'))
+  
+  variable.sqrt = paste0(variable, '.sqrt')
+  variable.log = paste0(variable, '.log')
+  
+  # hacemos los cálculos de las transformadas
+  datos[[variable.sqrt]] <- sqrt(datos[[variable]])
+  if (any(grepl(0, datos[[variable]]))){
+    x <- datos[[variable]]
+    x <- replace(x, x==0, 1)
+    datos[[variable.log]] <- log(x)
+  }else{
+    datos[[variable.log]] <- log(datos[[variable]])
+  }
+  
+  # dibujamos las tres figuras
+  print(ggplot(datos, aes(x=eval(parse(text = variable)))) + geom_density() + stat_overlay_normal_density(color = "red", linetype = "dashed") + labs(title = "En Bruto", x=variable)) 
+  print(ggplot(datos, aes(x=eval(parse(text = variable.sqrt)))) + geom_density() + stat_overlay_normal_density(color = "red", linetype = "dashed") + labs(title = "Transformada: Raíz Cuadrada", x=variable.sqrt))
+  print(ggplot(datos, aes(x=eval(parse(text = variable.log)))) + geom_density() + stat_overlay_normal_density(color = "red", linetype = "dashed") + labs(title = "Transformada: Logaritmo", x=variable.log)) 
+  
+  # evaluamos la skewness
+  skew.raw <- skewness(datos[[variable]], na.rm = TRUE)
+  skew.sqrt <- skewness(datos[[variable.sqrt]], na.rm = TRUE)
+  skew.log <- skewness(datos[[variable.log]], na.rm = TRUE)
+  
+  df.resultados <- data.frame(
+    original.skewness = skew.raw,
+    raiz.skewness = skew.sqrt,
+    log.skewness = skew.log
+  )
+  
+  print(knitr::kable(df.resultados, 
+                     caption = paste0('Resultados de los test de skewness para la variable ', variable, '.')))
+}
+```
+
+A la vista de estos resultados, nos vamos a quedar con las siguientes variables continuas:
+
+* likes.log
+
+* comentarios.log
+
+* Puntos.sqrt
+
+* Edad
+
+* publicaciones.log [aunque la sqrt también está bien, elegiríamos la log por seguir el mismo criterio que con las siguientes variables y no distorsionar los valores]
+
+* followers.log
+
+* following.log [para no distorsionar los valores]
+
+* num_hashtags [kurtosis = 4,05]
+
+* num_menciones [kurtosis = 4,35]
+
+* num_emojis [kurtosis = 2,43]
+
+* rostros.sqrt [aquí el problema es que el máximo es de 116, y esto distorsiona]
+
+* word_count.sqrt
+
+* tone_pos.sqrt
+
+* tone_neg.sqrt
+
+* emo_pos.sqrt
+
+* emo_neg.sqrt
+
+* prosocial.sqrt
+
+* polite.sqrt
+
+* Lifestyle.sqrt
+
+* health.sqrt
+
+# Evaluación de los modelos
+
+## Modelo 3: Likes + LIWC
+
+### Primera aproximación
+
+```{r}
+formula.likes <- likes.log ~ Puntos.sqrt + Edad + publicaciones.log + followers.log + following.log + Nike + Wilson + Yonex + Adidas + Asics + Head + Australian_Open + Roland_Garros + Wimbledon + US_Open + weekend + video + is_sponsored +  franja_horaria +  word_count.sqrt + num_hashtags + num_mentions + num_emojis  + texto.detectado + tennis.instruments + rostros.sqrt + emocion + tone_pos.sqrt + tone_neg.sqrt + emo_pos.sqrt + emo_neg.sqrt + prosocial.sqrt + polite.sqrt + Lifestyle.sqrt + health.sqrt + (1|username)
+
+# evaluamos el modelo
+modelo.likes <- lmer(formula.likes, data=datos, REML=FALSE)
+
+# tabla
+tab_model(modelo.likes)
+
+#TABLA MODELSUMMARY
+tabla1 <- modelsummary(
+  modelo.likes, 
+  estimate = "estimate", 
+  stars  = c('*' = 0.05, '**' = .01, '***' = .001), 
+  fmt = 3, 
+  shape = term ~ model + statistic, 
+  statistic = c('2.5%' = 'conf.low', '97.5%' = 'conf.high', 'p' = 'p.value'),
+  conf_level = 0.95, 
+  output = "data.frame"
+)
+
+#RENOMBRADO COLUMNAS
+colnames(tabla1)[2:6] <- c("Predictors","Estimates", "2.5%", "97.5%", "p")
+
+N <- sum(tabla1[4]!="", na.rm = TRUE)
+tabla1$CI <- paste0('[', tabla1$`2.5%`, ', ', tabla1$`97.5%`, ']')
+
+tabla1$CI[(N+1):nrow(tabla1)] <- ''
+
+tabla1$Predictors[2:N] <- c("Puntos ATP (Trf Raíz)", "Edad" , "Publicaciones (Trf Log)" , "Followers (Trf Log)" , "Following (Trf Log)" , "Nike" , "Wilson" , "Yonex" , "Adidas" , "Asics" , "Head" , "Australian Open" , "Roland Garros" , "Wimbledon" , "US Open" , "Fin de Semana" , "Video" , "Patrocinado" ,  "Tarde" , "Noche", "Nº Palabras (Trf Raíz)" , "Nº Hashtags" , "Nº Menciones" , "Nº Emojis"  , "Texto en Img" , "Instrumentos de Tenis" , "Nº Rostros (Trf Raíz)", "Felicidad", "Sorpresa", "Miedo", "Asco", "Enfado", "Tristeza", "Tono pos. (Trf Raíz)", "Tono neg. (Trf Raíz)", "Emoción pos. (Trf Raíz)", "Emoción neg. (Trf Raíz)", "Prosocial (Trf Raíz)", "Respetuoso (Trf Raíz)", "Estilo de vida (Trf Raíz)", "Salud (Trf Raíz)")
+
+#SELECCIÓN COLUMNAS
+tabla1 <- tabla1 %>% select('Predictors', 'Estimates', 'CI', 'p')
+tabla1$Predictors[46] <- "R2 Marg./R2 Cond."
+tabla1$Estimates[46] <- paste(tabla1$Estimates[46],tabla1$Estimates[47], sep = '/')
+tabla1 <- tabla1[-c(47,48,49,51),]
+
+#SEPARADO DE TABLA
+
+tabla1.1 <- tabla1[1:34,]
+tabla1.2 <- tabla1[35:nrow(tabla1),]
+rownames(tabla1.2) <- NULL
+
+tabla1_latex <- kable(tabla1, "latex", booktabs = TRUE, align = "lccc", caption = "Tabla del Modelo 3", row.names = FALSE) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position",  "scale_down"), 
+    full_width = FALSE, 
+    position = "center",
+    font_size = 9
+  ) %>%
+  add_header_above(c(" " = 1, "Likes (Trf Log)" = 3)) %>%
+  pack_rows("Usuario", 2, 6, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Marcas", 7, 12, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Torneos", 13, 16, italic = TRUE, bold = FALSE) %>%  
+  pack_rows("Post", 17, 19, italic = TRUE, bold = FALSE) %>%  
+  pack_rows("Franja (ref = mañana)", 20, 21, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Texto", 22 , 25, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Imagen", 26 , 28, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Emoción Imagen (ref = neutral)", 29, 34, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Análisis Textual", 35 , 42, italic = TRUE, bold = FALSE) %>%
+  row_spec(42, extra_latex_after = "\\midrule") %>%
+  pack_rows("SD de Efectos Aleatorios", 43, 44, italic = TRUE, bold = FALSE) %>%
+  row_spec(44, extra_latex_after = "\\midrule") %>%
+  footnote(
+    general = "* p<0.05; ** p<0.01; *** p<0.001",
+    footnote_as_chunk = TRUE,
+    escape = FALSE
+  )%>%
+  column_spec(2:7, width = "2cm")
+
+# Gráfico QQ Normal
+qqPlot(resid(modelo.likes), main = 'Gráfico QQ Normal - Likes')
+
+```
+
+A la vista de este resultado, hacemos un tratamiento de los outliers, para intentar mejorar este resultado.
+
+### Modelo sin outliers
+
+```{r}
+# sacamos los outliers
+outliers <- outlierTest(modelo.likes)
+indices.outliers <- as.numeric(names(outliers$rstudent))
+```
+
+Hemos detectado `r length(outliers$rstudent)` outliers. Los quitamos para esta nueva evaluación del modelo.
+
+
+```{r}
+# evaluamos el nuevo modelo
+modelo.likes.sinoutliers <- lmer(formula.likes, data = datos[-indices.outliers, ], REML=FALSE)
+
+# tabla
+tab_model(modelo.likes.sinoutliers)
+
+#TABLA MODELSUMMARY
+tabla2 <- modelsummary(
+  modelo.likes.sinoutliers, 
+  estimate = "estimate", 
+  stars  = c('*' = 0.05, '**' = .01, '***' = .001), 
+  fmt = 3, 
+  shape = term ~ model + statistic, 
+  statistic = c('2.5%' = 'conf.low', '97.5%' = 'conf.high', 'p' = 'p.value'),
+  conf_level = 0.95, 
+  output = "data.frame"
+)
+
+#RENOMBRADO COLUMNAS
+colnames(tabla2)[2:6] <- c("Predictors","Estimates", "2.5%", "97.5%", "p")
+
+N <- sum(tabla2[4]!="", na.rm = TRUE)
+tabla2$CI <- paste0('[', tabla2$`2.5%`, ', ', tabla2$`97.5%`, ']')
+
+tabla2$CI[(N+1):nrow(tabla2)] <- ''
+
+tabla2$Predictors[2:N] <- c("Puntos ATP (Trf Raíz)", "Edad" , "Publicaciones (Trf Log)" , "Followers (Trf Log)" , "Following (Trf Log)" , "Nike" , "Wilson" , "Yonex" , "Adidas" , "Asics" , "Head" , "Australian Open" , "Roland Garros" , "Wimbledon" , "US Open" , "Fin de Semana" , "Video" , "Patrocinado" ,  "Tarde" , "Noche", "Nº Palabras (Trf Raíz)" , "Nº Hashtags" , "Nº Menciones" , "Nº Emojis"  , "Texto en Img" , "Instrumentos de Tenis" , "Nº Rostros (Trf Raíz)", "Felicidad", "Sorpresa", "Miedo", "Asco", "Enfado", "Tristeza", "Tono pos. (Trf Raíz)", "Tono neg. (Trf Raíz)", "Emoción pos. (Trf Raíz)", "Emoción neg. (Trf Raíz)", "Prosocial (Trf Raíz)", "Respetuoso (Trf Raíz)", "Estilo de vida (Trf Raíz)", "Salud (Trf Raíz)")
+
+#SELECCIÓN COLUMNAS
+tabla2 <- tabla2 %>% select('Predictors', 'Estimates', 'CI', 'p')
+tabla2$Predictors[46] <- "R2 Marg./R2 Cond."
+tabla2$Estimates[46] <- paste(tabla2$Estimates[46],tabla2$Estimates[47], sep = '/')
+tabla2 <- tabla2[-c(47,48,49,51),]
+
+#SEPARADO DE TABLA
+
+tabla2.1 <- tabla2[1:34,]
+tabla2.2 <- tabla2[35:nrow(tabla2),]
+rownames(tabla2.2) <- NULL
+
+tabla2_latex <- kable(tabla2, "latex", booktabs = TRUE, align = "lccc", caption = "Tabla del Modelo 3 sin outliers",
+  row.names = FALSE) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position",  "scale_down"), 
+    full_width = FALSE, 
+    position = "center",
+    font_size = 9
+  ) %>%
+  add_header_above(c(" " = 1, "Likes (Trf Log) sin outliers" = 3)) %>%
+  pack_rows("Usuario", 2, 6, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Marcas", 7, 12, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Torneos", 13, 16, italic = TRUE, bold = FALSE) %>%  
+  pack_rows("Post", 17, 19, italic = TRUE, bold = FALSE) %>%  
+  pack_rows("Franja (ref = mañana)", 20, 21, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Texto", 22 , 25, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Imagen", 26 , 28, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Emoción Imagen (ref = neutral)", 29, 34, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Análisis Textual", 35 , 42, italic = TRUE, bold = FALSE) %>%
+  row_spec(42, extra_latex_after = "\\midrule") %>%
+  pack_rows("SD de Efectos Aleatorios", 43, 44, italic = TRUE, bold = FALSE) %>%
+  row_spec(44, extra_latex_after = "\\midrule") %>%
+  footnote(
+    general = "* p<0.05; ** p<0.01; *** p<0.001",
+    footnote_as_chunk = TRUE,
+    escape = FALSE
+  )%>%
+  column_spec(2:7, width = "2cm")
+
+# Gráfico QQ Normal
+qqPlot(resid(modelo.likes.sinoutliers), main = 'Gráfico QQ Normal - Likes - Sin Outliers')
+```
+
+
+## Modelo 4: Comentarios
+
+### Primera aproximación
+
+```{r}
+formula.comentarios <- comentarios.log ~ Puntos.sqrt + Edad + publicaciones.log + followers.log + following.log + Nike + Wilson + Yonex + Adidas + Asics + Head + Australian_Open + Roland_Garros + Wimbledon + US_Open + weekend + video + is_sponsored +  franja_horaria +  word_count.sqrt + num_hashtags + num_mentions + num_emojis  + texto.detectado + tennis.instruments + rostros.sqrt + emocion + tone_pos.sqrt + tone_neg.sqrt + emo_pos.sqrt + emo_neg.sqrt + prosocial.sqrt + polite.sqrt + Lifestyle.sqrt + health.sqrt + (1|username)
+
+# evaluamos el modelo
+modelo.comentarios <- lmer(formula.comentarios, data=datos, REML=FALSE)
+
+# tabla
+tab_model(modelo.comentarios)
+
+#TABLA MODELSUMMARY
+tabla3 <- modelsummary(
+  modelo.comentarios, 
+  estimate = "estimate", 
+  stars  = c('*' = 0.05, '**' = .01, '***' = .001), 
+  fmt = 3, 
+  shape = term ~ model + statistic, 
+  statistic = c('2.5%' = 'conf.low', '97.5%' = 'conf.high', 'p' = 'p.value'),
+  conf_level = 0.95, 
+  output = "data.frame"
+)
+
+#RENOMBRADO COLUMNAS
+colnames(tabla3)[2:6] <- c("Predictors","Estimates", "2.5%", "97.5%", "p")
+
+N <- sum(tabla3[4]!="", na.rm = TRUE)
+tabla3$CI <- paste0('[', tabla3$`2.5%`, ', ', tabla3$`97.5%`, ']')
+
+tabla3$CI[(N+1):nrow(tabla3)] <- ''
+
+tabla3$Predictors[2:N] <- c("Puntos ATP (Trf Raíz)", "Edad" , "Publicaciones (Trf Log)" , "Followers (Trf Log)" , "Following (Trf Log)" , "Nike" , "Wilson" , "Yonex" , "Adidas" , "Asics" , "Head" , "Australian Open" , "Roland Garros" , "Wimbledon" , "US Open" , "Fin de Semana" , "Video" , "Patrocinado" ,  "Tarde" , "Noche", "Nº Palabras (Trf Raíz)" , "Nº Hashtags" , "Nº Menciones" , "Nº Emojis"  , "Texto en Img" , "Instrumentos de Tenis" , "Nº Rostros (Trf Raíz)", "Felicidad", "Sorpresa", "Miedo", "Asco", "Enfado", "Tristeza", "Tono pos. (Trf Raíz)", "Tono neg. (Trf Raíz)", "Emoción pos. (Trf Raíz)", "Emoción neg. (Trf Raíz)", "Prosocial (Trf Raíz)", "Respetuoso (Trf Raíz)", "Estilo de vida (Trf Raíz)", "Salud (Trf Raíz)")
+
+#SELECCIÓN COLUMNAS
+tabla3 <- tabla3 %>% select('Predictors', 'Estimates', 'CI', 'p')
+tabla3$Predictors[46] <- "R2 Marg./R2 Cond."
+tabla3$Estimates[46] <- paste(tabla3$Estimates[46],tabla3$Estimates[47], sep = '/')
+tabla3 <- tabla3[-c(47,48,49,51),]
+
+#SEPARADO DE TABLA
+
+tabla3.1 <- tabla3[1:34,]
+tabla3.2 <- tabla3[35:nrow(tabla3),]
+rownames(tabla3.2) <- NULL
+
+tabla3_latex <- kable(tabla3, "latex", booktabs = TRUE, align = "lccc", caption = "Tabla del Modelo 4",
+  row.names = FALSE) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position",  "scale_down"), 
+    full_width = FALSE, 
+    position = "center",
+    font_size = 9
+  ) %>%
+  add_header_above(c(" " = 1, "Comentarios (Trf Log)" = 3)) %>%
+  pack_rows("Usuario", 2, 6, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Marcas", 7, 12, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Torneos", 13, 16, italic = TRUE, bold = FALSE) %>%  
+  pack_rows("Post", 17, 19, italic = TRUE, bold = FALSE) %>%  
+  pack_rows("Franja (ref = mañana)", 20, 21, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Texto", 22 , 25, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Imagen", 26 , 28, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Emoción Imagen (ref = neutral)", 29, 34, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Análisis Textual", 35 , 42, italic = TRUE, bold = FALSE) %>%
+  row_spec(42, extra_latex_after = "\\midrule") %>%
+  pack_rows("SD de Efectos Aleatorios", 43, 44, italic = TRUE, bold = FALSE) %>%
+  row_spec(44, extra_latex_after = "\\midrule") %>%
+  footnote(
+    general = "* p<0.05; ** p<0.01; *** p<0.001",
+    footnote_as_chunk = TRUE,
+    escape = FALSE
+  )%>%
+  column_spec(2:7, width = "2cm")
+
+# Gráfico QQ Normal
+qqPlot(resid(modelo.comentarios), main = 'Gráfico QQ Normal - Comentarios')
+
+```
+
+A la vista de este resultado, hacemos un tratamiento de los outliers, para intentar mejorar este resultado.
+
+### Modelo sin outliers
+
+```{r}
+# sacamos los outliers
+outliers <- outlierTest(modelo.comentarios)
+indices.outliers <- as.numeric(names(outliers$rstudent))
+```
+
+Hemos detectado `r length(outliers$rstudent)` outliers. Los quitamos para esta nueva evaluación del modelo.
+
+```{r}
+# evaluamos el nuevo modelo
+modelo.comentarios.sinoutliers <- lmer(formula.comentarios, data = datos[-indices.outliers, ], REML=FALSE)
+
+# tabla
+tab_model(modelo.comentarios.sinoutliers)
+
+#TABLA MODELSUMMARY
+tabla4 <- modelsummary(
+  modelo.comentarios.sinoutliers, 
+  estimate = "estimate", 
+  stars  = c('*' = 0.05, '**' = .01, '***' = .001), 
+  fmt = 3, 
+  shape = term ~ model + statistic, 
+  statistic = c('2.5%' = 'conf.low', '97.5%' = 'conf.high', 'p' = 'p.value'),
+  conf_level = 0.95, 
+  output = "data.frame"
+)
+
+#RENOMBRADO COLUMNAS
+colnames(tabla4)[2:6] <- c("Predictors","Estimates", "2.5%", "97.5%", "p")
+
+N <- sum(tabla4[4]!="", na.rm = TRUE)
+tabla4$CI <- paste0('[', tabla4$`2.5%`, ', ', tabla4$`97.5%`, ']')
+
+tabla4$CI[(N+1):nrow(tabla4)] <- ''
+
+tabla4$Predictors[2:N] <- c("Puntos ATP (Trf Raíz)", "Edad" , "Publicaciones (Trf Log)" , "Followers (Trf Log)" , "Following (Trf Log)" , "Nike" , "Wilson" , "Yonex" , "Adidas" , "Asics" , "Head" , "Australian Open" , "Roland Garros" , "Wimbledon" , "US Open" , "Fin de Semana" , "Video" , "Patrocinado" ,  "Tarde" , "Noche", "Nº Palabras (Trf Raíz)" , "Nº Hashtags" , "Nº Menciones" , "Nº Emojis"  , "Texto en Img" , "Instrumentos de Tenis" , "Nº Rostros (Trf Raíz)", "Felicidad", "Sorpresa", "Miedo", "Asco", "Enfado", "Tristeza", "Tono pos. (Trf Raíz)", "Tono neg. (Trf Raíz)", "Emoción pos. (Trf Raíz)", "Emoción neg. (Trf Raíz)", "Prosocial (Trf Raíz)", "Respetuoso (Trf Raíz)", "Estilo de vida (Trf Raíz)", "Salud (Trf Raíz)")
+
+#SELECCIÓN COLUMNAS
+tabla4 <- tabla4 %>% select('Predictors', 'Estimates', 'CI', 'p')
+tabla4$Predictors[46] <- "R2 Marg./R2 Cond."
+tabla4$Estimates[46] <- paste(tabla4$Estimates[46],tabla4$Estimates[47], sep = '/')
+tabla4 <- tabla4[-c(47,48,49,51),]
+
+#SEPARADO DE TABLA
+
+tabla4.1 <- tabla4[1:34,]
+tabla4.2 <- tabla4[35:nrow(tabla4),]
+rownames(tabla4.2) <- NULL
+
+tabla4_latex <- kable(tabla4, "latex", booktabs = TRUE, align = "lccc", caption = "Tabla del Modelo 4 sin outliers", row.names = FALSE) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position",  "scale_down"), 
+    full_width = FALSE, 
+    position = "center",
+    font_size = 9
+  ) %>%
+  add_header_above(c(" " = 1, "Comentarios (Trf Log) sin outliers" = 3)) %>%
+  pack_rows("Usuario", 2, 6, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Marcas", 7, 12, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Torneos", 13, 16, italic = TRUE, bold = FALSE) %>%  
+  pack_rows("Post", 17, 19, italic = TRUE, bold = FALSE) %>%  
+  pack_rows("Franja (ref = mañana)", 20, 21, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Texto", 22 , 25, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Imagen", 26 , 28, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Emoción Imagen (ref = neutral)", 29, 34, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Análisis Textual", 35 , 42, italic = TRUE, bold = FALSE) %>%
+  row_spec(42, extra_latex_after = "\\midrule") %>%
+  pack_rows("SD de Efectos Aleatorios", 43, 44, italic = TRUE, bold = FALSE) %>%
+  row_spec(44, extra_latex_after = "\\midrule") %>%
+  footnote(
+    general = "* p<0.05; ** p<0.01; *** p<0.001",
+    footnote_as_chunk = TRUE,
+    escape = FALSE
+  )%>%
+  column_spec(2:7, width = "2cm")
+
+# Gráfico QQ Normal
+qqPlot(resid(modelo.comentarios.sinoutliers), main = 'Gráfico QQ Normal - Comentarios - Sin Outliers')
+```
+
+# Resultados finales
+
+Mostramos los datos con outliers, porque son muy pocos.
+
+```{r}
+tab_model(modelo.likes, modelo.comentarios, title = 'Resultados Modelo 3 y Modelo 4 (Jugador + Post + Imágenes + LIWC)', dv.labels = c('Likes', 'Comentarios'))
+
+modelos <- list(
+  "Likes" = modelo.likes, 
+  "Comentarios" = modelo.comentarios
+)
+
+tabla5 <- modelsummary(
+  modelos,
+  estimate = "estimate", 
+  stars  = c('*' = 0.05, '**' = .01, '***' = .001), 
+  fmt = 3, 
+  shape = term ~ model + statistic, 
+  statistic = c('2.5%' = 'conf.low', '97.5%' = 'conf.high', 'p' = 'p.value'),
+  conf_level = 0.95, 
+  output = "data.frame"
+)
+
+# Renombrar columnas
+colnames(tabla5)[2:10] <- c("Predictors","Estimates(1)", "2.5%(1)", "97.5%(1)", "p(1)","Estimates(2)", "2.5%(2)", "97.5%(2)", "p(2)")
+
+N <- sum(tabla5[4]!="", na.rm = TRUE)
+N <- sum(tabla5[8]!="", na.rm = TRUE)
+tabla5$'CI(1)' <- paste0('[', tabla5$`2.5%(1)`, ', ', tabla5$`97.5%(1)`, ']')
+tabla5$'CI(2)' <- paste0('[', tabla5$`2.5%(2)`, ', ', tabla5$`97.5%(2)`, ']')
+tabla5$'CI(1)'[(N+1):nrow(tabla5)] <- ''
+tabla5$'CI(2)'[(N+1):nrow(tabla5)] <- ''
+
+tabla5$Predictors[2:N] <- c("Puntos ATP (Trf Raíz)", "Edad" , "Publicaciones (Trf Log)" , "Followers (Trf Log)" , "Following (Trf Log)" , "Nike" , "Wilson" , "Yonex" , "Adidas" , "Asics" , "Head" , "Australian Open" , "Roland Garros" , "Wimbledon" , "US Open" , "Fin de Semana" , "Video" , "Patrocinado" ,  "Tarde" , "Noche", "Nº Palabras (Trf Raíz)" , "Nº Hashtags" , "Nº Menciones" , "Nº Emojis"  , "Texto en Img" , "Instrumentos de Tenis" , "Nº Rostros (Trf Raíz)", "Felicidad", "Sorpresa", "Miedo", "Asco", "Enfado", "Tristeza", "Tono pos. (Trf Raíz)", "Tono neg. (Trf Raíz)", "Emoción pos. (Trf Raíz)", "Emoción neg. (Trf Raíz)", "Prosocial (Trf Raíz)", "Respetuoso (Trf Raíz)", "Estilo de vida (Trf Raíz)", "Salud (Trf Raíz)")
+
+# Seleccionar columnas necesarias
+tabla5 <- tabla5 %>% select("Predictors","Estimates(1)", "CI(1)", "p(1)","Estimates(2)", "CI(2)", "p(2)")
+tabla5$Predictors[46] <- "R2 Marg./R2 Cond."
+tabla5$Estimates[46] <- paste(tabla5$Estimates[46],tabla5$Estimates[47], sep = '/')
+tabla5 <- tabla5[-c(47,48,49,51),]
+
+#SEPARADO DE TABLA
+
+tabla5.1 <- tabla5[1:34,]
+tabla5.2 <- tabla5[35:nrow(tabla5),]
+rownames(tabla5.2) <- NULL
+
+tabla5_latex <- kable(tabla5, "latex", booktabs = TRUE, align = "lcccccc", col.names = c("Predictors", "Estimates", "CI", "p", "Estimates", "CI", "p"), caption = "Tabla de Resultados Modelo 3 y Modelo 4 (Jugador + Post + Imágenes + LIWC)", row.names = FALSE) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position"), 
+    full_width = FALSE, 
+    position = "center",
+    font_size = 9
+  ) %>%
+  add_header_above(c(" " = 1, "Modelo 3: Likes (Trf Log)" = 3, "Modelo 4: Comentarios (Trf Log)" = 3)) %>%
+  pack_rows("Usuario", 2, 6, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Marcas", 7, 12, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Torneos", 13, 16, italic = TRUE, bold = FALSE) %>%  
+  pack_rows("Post", 17, 19, italic = TRUE, bold = FALSE) %>%  
+  pack_rows("Franja (ref = mañana)", 20, 21, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Texto", 22 , 25, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Imagen", 26 , 28, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Emoción Imagen (ref = neutral)", 29, 34, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Análisis Textual", 35 , 42, italic = TRUE, bold = FALSE) %>%
+  row_spec(42, extra_latex_after = "\\midrule") %>%
+  pack_rows("SD de Efectos Aleatorios", 43, 44, italic = TRUE, bold = FALSE) %>%
+  row_spec(44, extra_latex_after = "\\midrule") %>%
+  footnote(
+    general = "* p<0.05; ** p<0.01; *** p<0.001",
+    footnote_as_chunk = TRUE,
+    escape = FALSE
+  )%>%
+  column_spec(2:7, width = "2cm")
+```
+
+# Comparación de likes sin y con LIWC
+
+```{r}
+likes_sin_imagen_sin_LIWC <- likes.log ~ Puntos.sqrt + Edad + publicaciones.log + followers.log + following.log + Nike + Wilson + Yonex + Adidas + Asics + Head + Australian_Open + Roland_Garros + Wimbledon + US_Open + weekend + video + is_sponsored +  franja_horaria +  word_count.sqrt + num_hashtags + num_mentions + num_emojis + (1|username)
+
+likes_con_imagen_sin_LIWC <- likes.log ~ Puntos.sqrt + Edad + publicaciones.log + followers.log + following.log + Nike + Wilson + Yonex + Adidas + Asics + Head + Australian_Open + Roland_Garros + Wimbledon + US_Open + weekend + video + is_sponsored +  franja_horaria +  word_count.sqrt + num_hashtags + num_mentions + num_emojis  + texto.detectado + tennis.instruments + rostros.sqrt + emocion + (1|username)
+
+modelo.likes_sin_imagen_sin_LIWC <- lmer(likes_sin_imagen_sin_LIWC, data=datos, REML=FALSE)
+
+modelo.likes_con_imagen_sin_LIWC <- lmer(likes_con_imagen_sin_LIWC, data=datos, REML=FALSE)
+
+
+tab_model(modelo.likes_sin_imagen_sin_LIWC ,modelo.likes_con_imagen_sin_LIWC, modelo.likes, title = 'Resultados de Comparación de modelos para likes', dv.labels = c('Sin Imagen', 'Con Imagen', 'Con Imagen + Texto'))
+
+tab_df(anova(modelo.likes_con_imagen_sin_LIWC, modelo.likes), title = 'ANOVA entre ambos modelos', show.rownames =T)
+
+
+modelos1 <- list(
+  "Likes sin Imagen" = modelo.likes_sin_imagen_sin_LIWC, 
+  "Likes con Imagen" = modelo.likes_con_imagen_sin_LIWC,
+  "Likes con Imagen + Análisis Textual" = modelo.likes
+)
+
+tabla6 <- modelsummary(
+  modelos1,
+  estimate = "estimate", 
+  stars  = c('*' = 0.05, '**' = .01, '***' = .001), 
+  fmt = 3, 
+  shape = term ~ model + statistic, 
+  statistic = c('2.5%' = 'conf.low', '97.5%' = 'conf.high', 'p' = 'p.value'),
+  conf_level = 0.95, 
+  output = "data.frame"
+)
+
+# Extraer las filas 26 y 27
+fila_26_27 <- tabla6[26:27, ]
+
+# Eliminar las filas 26 y 27 del data.frame
+tabla6 <- tabla6[-c(26, 27), ]
+
+# Reiniciar los nombres de las filas
+rownames(tabla6) <- 1:nrow(tabla6)
+
+# Insertar las filas 26 y 27 entre las filas 43 y 44
+tabla6 <- rbind(tabla6[1:42, ], fila_26_27, tabla6[43:nrow(tabla6), ])
+
+# Reiniciar los nombres de las filas nuevamente
+rownames(tabla6) <- 1:nrow(tabla6)
+
+fila_indices <- 45:51
+ultima_columna <- ncol(tabla6)
+tabla6[fila_indices, 11] <- tabla6[fila_indices, ultima_columna]
+tabla6[fila_indices, ultima_columna] <- ""
+
+# Renombrar columnas
+colnames(tabla6)[2:14] <- c("Predictors","Estimates(1)", "2.5%(1)", "97.5%(1)", "p(1)","Estimates(2)", "2.5%(2)", "97.5%(2)", "p(2)","Estimates(3)", "2.5%(3)", "97.5%(3)", "p(3)")
+
+N1 <- sum(tabla6[4]!="", na.rm = TRUE)
+N2 <- sum(tabla6[8]!="", na.rm = TRUE)
+N3 <- sum(tabla6[12]!="", na.rm = TRUE)
+tabla6$'CI(1)' <- paste0('[', tabla6$`2.5%(1)`, ', ', tabla6$`97.5%(1)`, ']')
+tabla6$'CI(2)' <- paste0('[', tabla6$`2.5%(2)`, ', ', tabla6$`97.5%(2)`, ']')
+tabla6$'CI(3)' <- paste0('[', tabla6$`2.5%(3)`, ', ', tabla6$`97.5%(3)`, ']')
+tabla6$'CI(1)'[(N1+1):nrow(tabla6)] <- ''
+tabla6$'CI(2)'[(N2+1):nrow(tabla6)] <- ''
+tabla6$'CI(3)'[(N3+1):nrow(tabla6)] <- ''
+
+tabla6$Predictors[2:N3] <- c("Puntos ATP (Trf Raíz)", "Edad" , "Publicaciones (Trf Log)" , "Followers (Trf Log)" , "Following (Trf Log)" , "Nike" , "Wilson" , "Yonex" , "Adidas" , "Asics" , "Head" , "Australian Open" , "Roland Garros" , "Wimbledon" , "US Open" , "Fin de Semana" , "Video" , "Patrocinado" ,  "Tarde" , "Noche", "Nº Palabras (Trf Raíz)" , "Nº Hashtags" , "Nº Menciones" , "Nº Emojis"  , "Texto en Img" , "Instrumentos de Tenis" , "Nº Rostros (Trf Raíz)", "Felicidad", "Sorpresa", "Miedo", "Asco", "Enfado", "Tristeza", "Tono pos. (Trf Raíz)", "Tono neg. (Trf Raíz)", "Emoción pos. (Trf Raíz)", "Emoción neg. (Trf Raíz)", "Prosocial (Trf Raíz)", "Respetuoso (Trf Raíz)", "Estilo de vida (Trf Raíz)", "Salud (Trf Raíz)")
+
+
+tabla6 <- tabla6 %>% select("Predictors","Estimates(1)", "p(1)", "Estimates(2)", "p(2)", "Estimates(3)", "p(3)")
+tabla6$Predictors[46] <- "R2 Marg./R2 Cond."
+tabla6$'Estimates(1)'[46] <- paste(tabla6$'Estimates(1)'[46],tabla6$'Estimates(1)'[47], sep = '/')
+tabla6$'Estimates(2)'[46] <- paste(tabla6$'Estimates(2)'[46],tabla6$'Estimates(2)'[47], sep = '/')
+tabla6$'Estimates(3)'[46] <- paste(tabla6$'Estimates(3)'[46],tabla6$'Estimates(3)'[47], sep = '/')
+tabla6 <- tabla6[-c(47,48,49,51),]
+
+tabla6.1 <- tabla6[1:34,]
+tabla6.2 <- tabla6[35:nrow(tabla6),]
+rownames(tabla6.2) <- NULL
+
+tabla6_latex <- kable(tabla6, "latex", booktabs = TRUE, align = "lcccccc", col.names = c("Predictors", "Estimates", "p", "Estimates", "p", "Estimates", "p"), caption = "Comparación de likes", row.names = FALSE) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"), 
+    full_width = FALSE, 
+    position = "center"
+  ) %>%
+  add_header_above(c(" " = 1, "Likes (Trf Log)" = 2, "Likes (Trf Log) + img" = 2, "Likes (Trf Log) con img + texto" = 2)) %>%
+  pack_rows("Usuario", 2, 6, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Marcas", 7, 12, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Torneos", 13, 16, italic = TRUE, bold = FALSE) %>%  
+  pack_rows("Post", 17, 19, italic = TRUE, bold = FALSE) %>%  
+  pack_rows("Franja (ref = mañana)", 20, 21, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Texto", 22 , 25, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Imagen", 26 , 28, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Emoción Imagen (ref = neutral)", 29, 34, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Análisis Textual", 35 , 42, italic = TRUE, bold = FALSE) %>%
+  row_spec(42, extra_latex_after = "\\midrule") %>%
+  pack_rows("SD de Efectos Aleatorios", 43, 44, italic = TRUE, bold = FALSE) %>%
+  row_spec(44, extra_latex_after = "\\midrule") %>%
+  footnote(
+    general = "* p<0.05; ** p<0.01; *** p<0.001",
+    footnote_as_chunk = TRUE,
+    escape = FALSE
+  )
+
+tabla6.1_latex <- kable(tabla6.1, "latex", booktabs = TRUE, align = "lcccccc", col.names = c("Predictors", "Estimates", "p", "Estimates", "p", "Estimates", "p"), caption = "Comparación de likes", row.names = FALSE) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"), 
+    full_width = FALSE, 
+    position = "center"
+  ) %>%
+  add_header_above(c(" " = 1, "Likes (Trf Log) sin imagen" = 2, "Likes (Trf Log) con imagen" = 2, "Likes (Trf Log) con imagen + texto" = 2)) %>%
+  pack_rows("Usuario", 2, 6, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Marcas", 7, 12, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Torneos", 13, 16, italic = TRUE, bold = FALSE) %>%  
+  pack_rows("Post", 17, 19, italic = TRUE, bold = FALSE) %>%  
+  pack_rows("Franja (ref = mañana)", 20, 21, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Texto", 22 , 25, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Imagen", 26 , 28, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Emoción Imagen (ref = neutral)", 29, 34, italic = TRUE, bold = FALSE) %>%
+  footnote(
+    general = "* p<0.05; ** p<0.01; *** p<0.001",
+    footnote_as_chunk = TRUE,
+    escape = FALSE
+  )
+  
+
+tabla6.2_latex <- kable(tabla6.2, "latex", booktabs = TRUE, align = "lcccccc", col.names = c("Predictors", "Estimates", "p", "Estimates", "p", "Estimates", "p"), caption = "Comparación de likes", row.names = FALSE) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"), 
+    full_width = FALSE, 
+    position = "center"
+  ) %>%
+  add_header_above(c(" " = 1, "Likes (Trf Log)" = 2, "Likes (Trf Log) + img" = 2, "Likes (Trf Log) con img + texto" = 2)) %>%
+  pack_rows("Análisis Textual", 1 , 8, italic = TRUE, bold = FALSE) %>%
+  row_spec(8, extra_latex_after = "\\midrule") %>%
+  pack_rows("SD de Efectos Aleatorios", 9, 10, italic = TRUE, bold = FALSE) %>%
+  row_spec(10, extra_latex_after = "\\midrule") %>%
+  footnote(
+    general = "* p<0.05; ** p<0.01; *** p<0.001",
+    footnote_as_chunk = TRUE,
+    escape = FALSE
+  )
+
+#ANOVA 1
+tab_df(anova(modelo.likes_sin_imagen_sin_LIWC, modelo.likes_con_imagen_sin_LIWC), title = 'ANOVA entre ambos modelos', show.rownames =T)
+
+options(knitr.kable.NA="")
+
+anova_result <- anova(modelo.likes_sin_imagen_sin_LIWC, modelo.likes_con_imagen_sin_LIWC)
+
+anova_df <- as.data.frame(anova_result)
+
+colnames(anova_df) <- c("Npar", "AIC", "BIG", "logLik","Deviance", "Chisq", "Df", "Pr.Chisq.")
+
+anova_latex <- kable(anova_df, format = "latex", booktabs = TRUE, caption = "ANOVA entre Likes sin Img y Likes con Img") %>%
+   kable_styling(latex_options = c("striped", "hold_position"), full_width = FALSE, position = "center")
+
+#ANOVA 2
+tab_df(anova(modelo.likes_con_imagen_sin_LIWC, modelo.likes), title = 'ANOVA entre ambos modelos', show.rownames =T)
+
+options(knitr.kable.NA="")
+
+anova_result2 <- anova(modelo.likes_con_imagen_sin_LIWC, modelo.likes)
+
+anova_df2 <- as.data.frame(anova_result2)
+
+colnames(anova_df2) <- c("Npar", "AIC", "BIG", "logLik","Deviance", "Chisq", "Df", "Pr.Chisq.")
+
+anova_latex2 <- kable(anova_df2, format = "latex", booktabs = TRUE, caption = "ANOVA entre Likes con Img y Likes con Img + Texto") %>%
+   kable_styling(latex_options = c("striped", "hold_position"), full_width = FALSE, position = "center")
+
+
+```
+
+# Comparación de comentarios
+
+```{r}
+comentarios_sin_imagen_sin_LIWC <- comentarios.log ~ Puntos.sqrt + Edad + publicaciones.log + followers.log + following.log + Nike + Wilson + Yonex + Adidas + Asics + Head + Australian_Open + Roland_Garros + Wimbledon + US_Open + weekend + video + is_sponsored +  franja_horaria +  word_count.sqrt + num_hashtags + num_mentions + num_emojis + (1|username)
+
+comentarios_con_imagen_sin_LIWC <- comentarios.log ~ Puntos.sqrt + Edad + publicaciones.log + followers.log + following.log + Nike + Wilson + Yonex + Adidas + Asics + Head + Australian_Open + Roland_Garros + Wimbledon + US_Open + weekend + video + is_sponsored +  franja_horaria +  word_count.sqrt + num_hashtags + num_mentions + num_emojis  + texto.detectado + tennis.instruments + rostros.sqrt + emocion + (1|username)
+
+modelo.comentarios_sin_imagen_sin_LIWC <- lmer(comentarios_sin_imagen_sin_LIWC, data=datos, REML=FALSE)
+
+modelo.comentarios_con_imagen_sin_LIWC <- lmer(comentarios_con_imagen_sin_LIWC, data=datos, REML=FALSE)
+
+
+tab_model(modelo.comentarios_sin_imagen_sin_LIWC ,modelo.comentarios_con_imagen_sin_LIWC, modelo.comentarios, title = 'Resultados de Comparación de modelos para comentarios', dv.labels = c('Sin Imagen', 'Con Imagen', 'Con Imagen + Texto'))
+
+tab_df(anova(modelo.comentarios_con_imagen_sin_LIWC, modelo.comentarios), title = 'ANOVA entre ambos modelos', show.rownames =T)
+
+
+modelos1 <- list(
+  "Comentarios sin Imagen" = modelo.comentarios_sin_imagen_sin_LIWC, 
+  "Comentarios con Imagen" = modelo.comentarios_con_imagen_sin_LIWC,
+  "Comentarios con Imagen + Análisis Textual" = modelo.comentarios
+)
+
+tabla7 <- modelsummary(
+  modelos1,
+  estimate = "estimate", 
+  stars  = c('*' = 0.05, '**' = .01, '***' = .001), 
+  fmt = 3, 
+  shape = term ~ model + statistic, 
+  statistic = c('2.5%' = 'conf.low', '97.5%' = 'conf.high', 'p' = 'p.value'),
+  conf_level = 0.95, 
+  output = "data.frame"
+)
+
+# Extraer las filas 26 y 27
+fila_26_27 <- tabla7[26:27, ]
+
+# Eliminar las filas 26 y 27 del data.frame
+tabla7 <- tabla7[-c(26, 27), ]
+
+# Reiniciar los nombres de las filas
+rownames(tabla7) <- 1:nrow(tabla7)
+
+# Insertar las filas 26 y 27 entre las filas 43 y 44
+tabla7 <- rbind(tabla7[1:42, ], fila_26_27, tabla7[43:nrow(tabla7), ])
+
+# Reiniciar los nombres de las filas nuevamente
+rownames(tabla7) <- 1:nrow(tabla7)
+
+fila_indices <- 45:51
+ultima_columna <- ncol(tabla7)
+tabla7[fila_indices, 11] <- tabla7[fila_indices, ultima_columna]
+tabla7[fila_indices, ultima_columna] <- ""
+
+# Renombrar columnas
+colnames(tabla7)[2:14] <- c("Predictors","Estimates(1)", "2.5%(1)", "97.5%(1)", "p(1)","Estimates(2)", "2.5%(2)", "97.5%(2)", "p(2)","Estimates(3)", "2.5%(3)", "97.5%(3)", "p(3)")
+
+N1 <- sum(tabla7[4]!="", na.rm = TRUE)
+N2 <- sum(tabla7[8]!="", na.rm = TRUE)
+N3 <- sum(tabla7[12]!="", na.rm = TRUE)
+tabla7$'CI(1)' <- paste0('[', tabla7$`2.5%(1)`, ', ', tabla7$`97.5%(1)`, ']')
+tabla7$'CI(2)' <- paste0('[', tabla7$`2.5%(2)`, ', ', tabla7$`97.5%(2)`, ']')
+tabla7$'CI(3)' <- paste0('[', tabla7$`2.5%(3)`, ', ', tabla7$`97.5%(3)`, ']')
+tabla7$'CI(1)'[(N1+1):nrow(tabla7)] <- ''
+tabla7$'CI(2)'[(N2+1):nrow(tabla7)] <- ''
+tabla7$'CI(3)'[(N3+1):nrow(tabla7)] <- ''
+
+tabla7$Predictors[2:N3] <- c("Puntos ATP (Trf Raíz)", "Edad" , "Publicaciones (Trf Log)" , "Followers (Trf Log)" , "Following (Trf Log)" , "Nike" , "Wilson" , "Yonex" , "Adidas" , "Asics" , "Head" , "Australian Open" , "Roland Garros" , "Wimbledon" , "US Open" , "Fin de Semana" , "Video" , "Patrocinado" ,  "Tarde" , "Noche", "Nº Palabras (Trf Raíz)" , "Nº Hashtags" , "Nº Menciones" , "Nº Emojis"  , "Texto en Img" , "Instrumentos de Tenis" , "Nº Rostros (Trf Raíz)", "Felicidad", "Sorpresa", "Miedo", "Asco", "Enfado", "Tristeza", "Tono pos. (Trf Raíz)", "Tono neg. (Trf Raíz)", "Emoción pos. (Trf Raíz)", "Emoción neg. (Trf Raíz)", "Prosocial (Trf Raíz)", "Respetuoso (Trf Raíz)", "Estilo de vida (Trf Raíz)", "Salud (Trf Raíz)")
+
+
+tabla7 <- tabla7 %>% select("Predictors","Estimates(1)", "p(1)", "Estimates(2)", "p(2)", "Estimates(3)", "p(3)")
+tabla7$Predictors[46] <- "R2 Marg./R2 Cond."
+tabla7$'Estimates(1)'[46] <- paste(tabla7$'Estimates(1)'[46],tabla7$'Estimates(1)'[47], sep = '/')
+tabla7$'Estimates(2)'[46] <- paste(tabla7$'Estimates(2)'[46],tabla7$'Estimates(2)'[47], sep = '/')
+tabla7$'Estimates(3)'[46] <- paste(tabla7$'Estimates(3)'[46],tabla7$'Estimates(3)'[47], sep = '/')
+tabla7 <- tabla7[-c(47,48,49,51),]
+
+tabla7.1 <- tabla7[1:34,]
+tabla7.2 <- tabla7[35:nrow(tabla7),]
+rownames(tabla7.2) <- NULL
+
+tabla7_latex <- kable(tabla7, "latex", booktabs = TRUE, align = "lcccccc", col.names = c("Predictors", "Estimates", "p", "Estimates", "p", "Estimates", "p"), caption = "Comparación de comentarios", row.names = FALSE) %>%
+  kable_styling(
+    latex_options = c("striped", "hold_position", "scale_down"), 
+    full_width = FALSE, 
+    position = "center"
+  ) %>%
+  add_header_above(c(" " = 1, "Comentarios (Trf Log)" = 2, "Comentarios (Trf Log) + img" = 2, "Comentarios (Trf Log) + img + texto" = 2)) %>%
+  pack_rows("Usuario", 2, 6, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Marcas", 7, 12, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Torneos", 13, 16, italic = TRUE, bold = FALSE) %>%  
+  pack_rows("Post", 17, 19, italic = TRUE, bold = FALSE) %>%  
+  pack_rows("Franja (ref = mañana)", 20, 21, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Texto", 22 , 25, italic = TRUE, bold = FALSE) %>% 
+  pack_rows("Imagen", 26 , 28, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Emoción Imagen (ref = neutral)", 29, 34, italic = TRUE, bold = FALSE) %>%
+  pack_rows("Análisis Textual", 35 , 42, italic = TRUE, bold = FALSE) %>%
+  row_spec(42, extra_latex_after = "\\midrule") %>%
+  pack_rows("SD de Efectos Aleatorios", 43, 44, italic = TRUE, bold = FALSE) %>%
+  row_spec(44, extra_latex_after = "\\midrule") %>%
+  footnote(
+    general = "* p<0.05; ** p<0.01; *** p<0.001",
+    footnote_as_chunk = TRUE,
+    escape = FALSE
+  )
+
+
+#ANOVA 1
+tab_df(anova(modelo.comentarios_sin_imagen_sin_LIWC, modelo.comentarios_con_imagen_sin_LIWC), title = 'ANOVA entre ambos modelos', show.rownames =T)
+
+options(knitr.kable.NA="")
+
+anova_result3 <- anova(modelo.comentarios_sin_imagen_sin_LIWC, modelo.comentarios_con_imagen_sin_LIWC)
+
+anova_df3 <- as.data.frame(anova_result3)
+
+colnames(anova_df3) <- c("Npar", "AIC", "BIG", "logLik","Deviance", "Chisq", "Df", "Pr.Chisq.")
+
+anova_latex3 <- kable(anova_df3, format = "latex", booktabs = TRUE, caption = "ANOVA entre Comentarios sin Img y Comentarios con Img") %>%
+   kable_styling(latex_options = c("striped", "hold_position"), full_width = FALSE, position = "center")
+
+#ANOVA 2
+tab_df(anova(modelo.comentarios_con_imagen_sin_LIWC, modelo.comentarios), title = 'ANOVA entre ambos modelos', show.rownames =T)
+
+options(knitr.kable.NA="")
+
+anova_result4 <- anova(modelo.comentarios_con_imagen_sin_LIWC, modelo.comentarios)
+
+anova_df4 <- as.data.frame(anova_result4)
+
+colnames(anova_df4) <- c("Npar", "AIC", "BIG", "logLik","Deviance", "Chisq", "Df", "Pr.Chisq.")
+
+anova_latex4 <- kable(anova_df4, format = "latex", booktabs = TRUE, caption = "ANOVA entre Comentarios con Img y Comentarios con Img + Texto") %>%
+   kable_styling(latex_options = c("striped", "hold_position"), full_width = FALSE, position = "center")
+
+```
+

@@ -1,0 +1,418 @@
+---
+title: "Engagement en IG de Tenistas ATP"
+subtitle: "Datos: tenistas + posts + imágenes + LIWC"
+date: "`r paste0('Versión: ', format(Sys.time(), '%d-%b-%Y   %H:%M:%S'))`"
+output: latex_document
+
+knit: (function(inputFile, encoding) { 
+    rmarkdown::render(
+        inputFile, encoding = encoding, 
+        output_file = 'C:/Users/pvill/OneDrive/Documentos/TFG INTEGRADO/Resultados_R/IG-ATP imágenes_LIWC.tex') 
+    })
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+library(lmerTest)
+library(ggplot2)
+library(lattice)
+library(ggpubr)       # 'ggplot2' Based Publication Ready Plots
+library(moments)      # for computing skewness
+library(sjPlot)
+library(car)          # función: qqPlot, durbinWatsonTest, outlierTest
+library(lmtest)       # función: bptest, gqtest
+library(corrplot)
+library(descr)
+library(psych)
+library(dplyr)        # funciones de dataframes
+library(pander)       # tablas en rmarkdown
+library(gridExtra)
+```
+
+
+# Datos
+
+## Carga de datos
+
+```{r}
+datos = read.csv("C:/Users/pvill/OneDrive/Documentos/TFG INTEGRADO/English_LIWC.csv")
+```
+
+Se han cargado `r dim(datos)[1]` filas y `r dim(datos)[2]` columnas. 
+
+* Cambiamos el nombre a la variable de los instrumentos de tenis.
+
+* Reordenamos las variables.
+
+* Quitamos las filas que tengan -1 en los likes (hay `r length(datos$likes[datos$likes<0])`).
+
+
+```{r}
+
+datos <- datos %>% 
+  rename(tennis.instruments = type) %>%
+  select(-c(post, shortcode, Marcas.Jugador)) %>%
+  relocate(likes:comentarios, .after = ID) %>%
+  relocate(publicaciones:following, .after = username) %>%
+  relocate(Puntos:Head, .after = username) %>%
+  relocate(franja_horaria, .after = hora) %>%
+  relocate(video, .after= hashtags ) %>%
+  relocate(weekend, .after = fecha) %>%
+  relocate(Australian_Open:US_Open, .after = weekend) %>%
+  relocate(num_hashtags:idioma, .after = sponsors) %>%
+  relocate(num_hashtags:word_count, .after = sponsors)
+
+datos <- datos[datos$likes > 0, ]
+
+```
+
+Nos hemos quedado con **`r dim(datos)[1]` filas** y `r dim(datos)[2]` columnas. Las columnas del dataframe quedan del siguiente modo:
+
+```{r}
+colnames(datos)
+```
+
+## Preprocesamiento
+
+* Cambiamos Puntos de texto a número.
+
+* En la Edad, tenemos `r sum(is.na(datos$Edad))` celdas vacías. Las vamos a llenar con la edad media.
+
+* En texto.detectado y tennis.instruments, pasamos del string a 1/0.
+
+* Establecemos la emoción neutra como referencia.
+
+* Ordenamos las categorías de franja_horaria.
+
+```{r}
+
+# PUNTOS
+datos$Puntos <- gsub(",", "", datos$Puntos)
+datos$Puntos <- as.numeric(datos$Puntos)
+# EDAD
+datos$Edad[is.na(datos$Edad)] <- mean(datos$Edad, na.rm = TRUE)
+# TRANSFORMACIÓN DE texto.detectado
+datos$texto.detectado <- ifelse(datos$texto.detectado == "SÍ", 1, 0)
+# TRANSFORMACIÓN DE tennis.instruments 
+datos$tennis.instruments <- ifelse(datos$tennis.instruments == "with tennis instruments", 1, 0)
+# REFERENCIA DE EMOCION
+datos$emocion <- as.factor(datos$emocion)
+datos$emocion <- relevel(datos$emocion, ref = "neutral")
+# ORDENACIÓN DE franja_horaria
+datos$franja_horaria <- factor(datos$franja_horaria, levels = c('Mañana', 'Tarde', 'Noche'))
+
+
+```
+
+## Exploración de las variables categóricas
+
+Se presentan a continuación los diagramas de caja y bigotes de las variables categóricas sobre los likes y los comentarios. Puesto que estas dos variables tienen una gran dispersión, se han excluido de los diagramas los valores que están más allá de los bigotes, es decir, sin los valores atípicos.
+
+```{r}
+
+par(mfrow = c(2, 2))
+
+lista_variables <- c('tennis.instruments', 'Nike', "Wilson", "Yonex", "Adidas", "Asics", "Head", "weekend", "Australian_Open", "Roland_Garros", "Wimbledon", "US_Open", 'texto.detectado', 'video')
+
+for (variable in lista_variables){
+  boxplot(likes ~ (eval(parse(text = variable))), col=c("white","lightgray"), datos, main = 'likes', xlab = variable, outline = FALSE)
+  boxplot(comentarios ~ (eval(parse(text = variable))), col=c("white","lightgray"), datos, main = 'comentarios', xlab = variable, outline = FALSE)
+}
+
+boxplot(likes ~ is_sponsored, col=c("white","lightgray","darkgray"), datos, main = 'likes', outline = FALSE)
+boxplot(comentarios ~ is_sponsored, col=c("white","lightgray","darkgray"), datos, main = 'comentarios', outline = FALSE)
+
+boxplot(likes ~ franja_horaria, col=c("white","lightgray","darkgray"), datos, main = 'likes', outline = FALSE)
+boxplot(comentarios ~ franja_horaria, col=c("white","lightgray","darkgray"), datos, main = 'comentarios', outline = FALSE)
+
+```
+
+```{r, include=FALSE}
+par(mfrow = c(1, 2))
+```
+
+
+```{r}
+boxplot(likes ~ emocion, col=c("white","lightgray","darkgray"), datos, main = 'likes', outline = FALSE)
+boxplot(comentarios ~ emocion, col=c("white","lightgray","darkgray"), datos, main = 'comentarios', outline = FALSE)
+```
+
+## Preprocesamiento de las variables continuas
+
+### Estadísticas Descriptivas
+
+```{r, results='asis'}
+
+lista <- c("idioma" , "Segment","WC", "Analytic", "Clout", "Authentic", "Tone", "Affect", "emotion", "emo_anx", "emo_anger", "emo_sad", "swear", "Social", "socbehav", "conflict", "moral", "comm", "socrefs", "family", "friend", "female", "male", "Culture", "politic",  "ethnicity", "tech", "leisure", "home", "work", "money", "relig", "Physical", "illness", "wellness", "mental", "substances", "sexual", "food", "death")
+
+datos <- select(datos, -all_of(lista))
+
+x <- describe(select(datos, -ID), ranges = TRUE, omit = TRUE) %>% 
+  select(-c(trimmed, mad, range, se))
+knitr::kable(x, digits = 3)
+```
+
+Teniendo en cuenta que "As a general guideline, a skewness value between −1 and +1 is considered excellent, but a value between −2 and +2 is generally considered acceptable. Values beyond −2 and +2 are considered indicative of substantial nonnormality." (Hair et al., 2022, p. 66)", vamos a tener que tratar algunas variables, especialmente likes, comentarios, Premio.monetario, los followers, los following y los rostros.
+
+### Matriz de Correlaciones entre las variables continuas
+
+```{r}
+lista_variables_continuas <- c('likes', 'comentarios', "Puntos","Premio.monetario", "Edad", "publicaciones","followers", "following", "num_hashtags","num_mentions", "num_emojis", "word_count", 'rostros', "tone_pos", "tone_neg", "emo_pos", "emo_neg", "prosocial", "polite", "Lifestyle", "health")
+#corrplot(cor(select(datos, all_of(lista_variables_continuas))), method = "color", type = "upper", order = "hclust", addCoef.col = "black", tl.col = "black", tl.srt = 45)
+#matrix <- cor(select(datos, all_of(lista_variables_continuas)))
+cor_matrix <- cor(select(datos, all_of(lista_variables_continuas)))
+
+# Ajustar el tamaño de la ventana gráfica
+par(cex.main=0.8, cex.lab=0.8, cex.axis=0.7, mar=c(0, 0, 0, 0) + 0.5)
+
+# Ajustar los parámetros del gráfico
+corrplot(cor_matrix, 
+         method = "color", 
+         type = "upper", 
+         order = "hclust", 
+         addCoef.col = "black", 
+         tl.col = "black", 
+         tl.srt = 45, 
+         tl.cex = 0.6,  # Tamaño de las etiquetas
+         cl.cex = 0.8,  # Tamaño de la leyenda
+         number.cex = 0.5)  # Tamaño de los coeficientes
+```
+
+La matriz está ordenada de más correlación a menos correlación. Por ese motivo no sigue el orden que le hemos dado. 
+
+Hay dos parejas de valores con altas correlaciones. Uno es *Puntos* y *Premio.monetario*, y el otro es *likes* y *comentarios*. Ambas correlaciones se sitúan en **0.87**. La segunda pareja no es problemática, porque son las variables dependientes. Pero la segunda indica que hay una correlación entre variables independientes. Por tanto, para nuestros modelos solo vamos a trabajar con **Puntos**.
+
+### LIWC
+
+Al añadir las nuevas variables de LIWC, podemos destacar 4 variables: tone_pos/emo_pos, prosocial/polite. No están altamente correlacionadas, encontramos un valor de 0.6 y 0.5, respectivamente. 
+
+### Exploración de las variables continuas
+
+Vamos a probar dos transformaciones: la raíz cuadrada y la logarítmica. Para estas transformadas, y también para el original, evaluamos la skewness.
+
+
+```{r, results='asis'}
+
+lista_variables = c('likes', 'comentarios', 'Puntos', 'Edad', 'publicaciones', 'followers', 'following', 'num_hashtags', 'num_mentions', 'num_emojis', 'rostros', 'word_count',"tone_pos", "tone_neg", "emo_pos", "emo_neg", "prosocial", "polite", "Lifestyle", "health")
+
+for (variable in lista_variables){
+  cat(paste0('\n\n#### ', variable, '\n\n'))
+  
+  variable.sqrt = paste0(variable, '.sqrt')
+  variable.log = paste0(variable, '.log')
+  
+  # hacemos los cálculos de las trasnsformadas
+  datos[[variable.sqrt]] <- sqrt(datos[[variable]])
+  if (any(grepl(0, datos[[variable]]))){
+    x <- datos[[variable]]
+    x <- replace(x, x==0, 1)
+    datos[[variable.log]] <- log(x)
+  }else{
+    datos[[variable.log]] <- log(datos[[variable]])
+  }
+  
+  # dibujamos las tres figuras
+  g1 <- ggplot(datos, aes(x=eval(parse(text = variable)))) + geom_density() + stat_overlay_normal_density(color = "red", linetype = "dashed") + labs(title = "En Bruto", x=variable)
+  g2 <- ggplot(datos, aes(x=eval(parse(text = variable.sqrt)))) + geom_density() + stat_overlay_normal_density(color = "red", linetype = "dashed") + labs(title = "Trf: Raíz Cuadrada", x=variable.sqrt)
+  g3 <- ggplot(datos, aes(x=eval(parse(text = variable.log)))) + geom_density() + stat_overlay_normal_density(color = "red", linetype = "dashed") + labs(title = "Trf: Logaritmo", x=variable.log)
+  
+  grid.arrange(g1, g2, g3, ncol=3)
+  
+  
+  # evaluamos la skewness
+  skew.raw <- skewness(datos[[variable]], na.rm = TRUE)
+  skew.sqrt <- skewness(datos[[variable.sqrt]], na.rm = TRUE)
+  skew.log <- skewness(datos[[variable.log]], na.rm = TRUE)
+  
+  df.resultados <- data.frame(
+    original.skewness = skew.raw,
+    raiz.skewness = skew.sqrt,
+    log.skewness = skew.log
+  )
+  
+  print(knitr::kable(df.resultados, 
+                     caption = paste0('Resultados de los test de skewness para la variable ', variable, '.')))
+}
+```
+
+A la vista de estos resultados, nos vamos a quedar con las siguientes variables continuas:
+
+* likes.log
+
+* comentarios.log
+
+* Puntos.sqrt
+
+* Edad
+
+* publicaciones.log [aunque la sqrt también está bien, elegiríamos la log por seguir el mismo criterio que con las siguientes variables y no distorsionar los valores]
+
+* followers.log
+
+* following.log [para no distorsionar los valores]
+
+* num_hashtags [kurtosis = 4,05]
+
+* num_menciones [kurtosis = 4,35]
+
+* num_emojis [kurtosis = 2,43]
+
+* rostros.sqrt [aquí el problema es que el máximo es de 116, y esto distorsiona]
+
+* word_count.sqrt
+
+* tone_pos.sqrt
+
+* tone_neg.sqrt
+
+* emo_pos.sqrt
+
+* emo_neg.sqrt
+
+* prosocial.sqrt
+
+* polite.sqrt
+
+* Lifestyle.sqrt
+
+* health.sqrt
+
+# Evaluación de los modelos
+
+## Modelo 3: Likes + LIWC
+
+### Primera aproximación
+
+```{r}
+formula.likes <- likes.log ~ Puntos.sqrt + Edad + Nike + Wilson + Yonex + Adidas + Asics + Head + publicaciones.log + followers.log + following.log + weekend + Australian_Open + Roland_Garros + Wimbledon + US_Open + franja_horaria + video + is_sponsored + num_hashtags + num_mentions + num_emojis + word_count.sqrt + texto.detectado + tennis.instruments + rostros.sqrt + emocion + tone_pos.sqrt + tone_neg.sqrt + emo_pos.sqrt + emo_neg.sqrt + prosocial.sqrt + polite.sqrt + Lifestyle.sqrt + health.sqrt + (1|username)
+
+# evaluamos el modelo
+modelo.likes <- lmer(formula.likes, data=datos, REML=FALSE)
+
+# tabla
+tab_model(modelo.likes)
+
+# Gráfico QQ Normal
+qqPlot(resid(modelo.likes), main = 'Gráfico QQ Normal - Likes')
+
+```
+
+A la vista de este resultado, hacemos un tratamiento de los outliers, para intentar mejorar este resultado.
+
+### Modelo sin outliers
+
+```{r}
+# sacamos los outliers
+outliers <- outlierTest(modelo.likes)
+indices.outliers <- as.numeric(names(outliers$rstudent))
+```
+
+Hemos detectado `r length(outliers$rstudent)` outliers. Los quitamos para esta nueva evaluación del modelo.
+
+
+```{r}
+# evaluamos el nuevo modelo
+modelo.likes.sinoutliers <- lmer(formula.likes, data = datos[-indices.outliers, ], REML=FALSE)
+
+# tabla
+tab_model(modelo.likes.sinoutliers)
+
+# Gráfico QQ Normal
+qqPlot(resid(modelo.likes.sinoutliers), main = 'Gráfico QQ Normal - Likes - Sin Outliers')
+```
+
+
+## Modelo 4: Comentarios + LIWC
+
+### Primera aproximación
+
+```{r}
+formula.comentarios <- comentarios.log ~ Puntos.sqrt + Edad + Nike + Wilson + Yonex + Adidas + Asics + Head + publicaciones.log + followers.log + following.log + weekend + Australian_Open + Roland_Garros + Wimbledon + US_Open + franja_horaria + video + is_sponsored + num_hashtags + num_mentions + num_emojis + word_count.sqrt + texto.detectado + tennis.instruments + rostros.sqrt + emocion + tone_pos.sqrt + tone_neg.sqrt + emo_pos.sqrt + emo_neg.sqrt + prosocial.sqrt + polite.sqrt + Lifestyle.sqrt + health.sqrt + (1|username)
+
+# evaluamos el modelo
+modelo.comentarios <- lmer(formula.comentarios, data=datos, REML=FALSE)
+
+# tabla
+tab_model(modelo.comentarios)
+
+# Gráfico QQ Normal
+qqPlot(resid(modelo.comentarios), main = 'Gráfico QQ Normal - Comentarios')
+
+```
+
+A la vista de este resultado, hacemos un tratamiento de los outliers, para intentar mejorar este resultado.
+
+### Modelo sin outliers
+
+```{r}
+# sacamos los outliers
+outliers <- outlierTest(modelo.comentarios)
+indices.outliers <- as.numeric(names(outliers$rstudent))
+```
+
+Hemos detectado `r length(outliers$rstudent)` outliers. Los quitamos para esta nueva evaluación del modelo.
+
+```{r}
+# evaluamos el nuevo modelo
+modelo.comentarios.sinoutliers <- lmer(formula.comentarios, data = datos[-indices.outliers, ], REML=FALSE)
+
+# tabla
+tab_model(modelo.comentarios.sinoutliers)
+
+# Gráfico QQ Normal
+qqPlot(resid(modelo.comentarios.sinoutliers), main = 'Gráfico QQ Normal - Comentarios - Sin Outliers')
+```
+
+# Resultados finales
+
+Mostramos los datos con outliers, porque son muy pocos.
+
+```{r}
+tab_model(modelo.likes, modelo.comentarios, title = 'Resultados Modelo 3 y Modelo 4 (Jugador + Post + Imágenes + LIWC)', dv.labels = c('Likes', 'Comentarios'))
+```
+
+# Comparaciones de modelos de likes
+
+```{r}
+likes_no_image_sin_LIWC <- likes.log ~ Puntos.sqrt + Edad + Nike + Wilson + Yonex + Adidas + Asics + Head + publicaciones.log + followers.log + following.log + weekend + Australian_Open + Roland_Garros + Wimbledon + US_Open + franja_horaria + video + is_sponsored + num_hashtags + num_mentions + num_emojis + word_count.sqrt + (1|username)
+
+# evaluamos el modelo
+modelo.likes_no_image_sin_LIWC <- lmer(likes_no_image_sin_LIWC, data=datos, REML=FALSE)
+
+likes_image_sin_LIWC <- likes.log ~ Puntos.sqrt + Edad + Nike + Wilson + Yonex + Adidas + Asics + Head + publicaciones.log + followers.log + following.log + weekend + Australian_Open + Roland_Garros + Wimbledon + US_Open + franja_horaria + video + is_sponsored + num_hashtags + num_mentions + num_emojis + word_count.sqrt + texto.detectado + tennis.instruments + rostros.sqrt + emocion + (1|username)
+
+# evaluamos el modelo
+modelo.likes_image_sin_LIWC <- lmer(likes_image_sin_LIWC, data=datos, REML=FALSE)
+
+# tabla
+tab_model(modelo.likes_no_image_sin_LIWC, modelo.likes_image_sin_LIWC, modelo.likes, title = 'Resultados de Comparación de modelos para likes', dv.labels = c('Sin Imágenes', 'Con Imágenes','Con Imágenes + Texto'))
+
+tab_df(anova(modelo.likes_no_image_sin_LIWC, modelo.likes_image_sin_LIWC), title = 'ANOVA entre ambos modelos sin y con variables de imagen', show.rownames =T)
+
+tab_df(anova(modelo.likes_image_sin_LIWC, modelo.likes), title = 'ANOVA entre ambos modelos sin y con LIWC', show.rownames =T)
+```
+
+# Comparaciones de modelos de comentarios
+
+```{r}
+comentarios_no_image_sin_LIWC <- comentarios.log ~ Puntos.sqrt + Edad + Nike + Wilson + Yonex + Adidas + Asics + Head + publicaciones.log + followers.log + following.log + weekend + Australian_Open + Roland_Garros + Wimbledon + US_Open + franja_horaria + video + is_sponsored + num_hashtags + num_mentions + num_emojis + word_count.sqrt + (1|username)
+
+# evaluamos el modelo
+modelo.comentarios_no_image_sin_LIWC <- lmer(comentarios_no_image_sin_LIWC, data=datos, REML=FALSE)
+
+comentarios_image_sin_LIWC <- comentarios.log ~ Puntos.sqrt + Edad + Nike + Wilson + Yonex + Adidas + Asics + Head + publicaciones.log + followers.log + following.log + weekend + Australian_Open + Roland_Garros + Wimbledon + US_Open + franja_horaria + video + is_sponsored + num_hashtags + num_mentions + num_emojis + word_count.sqrt + texto.detectado + tennis.instruments + rostros.sqrt + emocion + (1|username)
+
+# evaluamos el modelo
+modelo.comentarios_image_sin_LIWC <- lmer(comentarios_image_sin_LIWC, data=datos, REML=FALSE)
+
+# tabla
+tab_model(modelo.comentarios_no_image_sin_LIWC, modelo.comentarios_image_sin_LIWC, modelo.comentarios, title = 'Resultados de Comparación de modelos para likes', dv.labels = c('Sin Imágenes', 'Con Imágenes','Con Imágenes + Texto'))
+
+tab_df(anova(modelo.comentarios_no_image_sin_LIWC, modelo.comentarios_image_sin_LIWC), title = 'ANOVA entre ambos modelos sin y con variables de imagen', show.rownames =T)
+
+tab_df(anova(modelo.comentarios_image_sin_LIWC, modelo.comentarios), title = 'ANOVA entre ambos modelos sin y con LIWC', show.rownames =T)
+```
