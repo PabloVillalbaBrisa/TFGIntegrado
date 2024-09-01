@@ -45,8 +45,7 @@ Los programas han sido desarrollados y probados utilizando estos entornos:
 
 - **PyCharm**
 - **RStudio**
-- **Google Colaboratory** 
-![Google Colab Logo](C:\Users\pvill\OneDrive\Escritorio\TFGIntegrado\assets\Google_Colaboratory_SVG_Logo.svg.png)
+- **Google Colaboratory**
 
 ## Requisitos
 
