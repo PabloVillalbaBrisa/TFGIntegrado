@@ -2,13 +2,15 @@ import pandas as pd
 from langdetect import detect, LangDetectException
 import langcodes
 
-# Cargar el archivo CSV
 df = pd.read_csv('C:/Users/pvill/OneDrive/Documentos/TFG INTEGRADO/paolo_metadata_10.csv')
 
-# Función para detectar el idioma
-# Función para detectar el idioma y convertir el código al nombre completo
+#FUNCIÓN QUE DETECTA EL IDIOMA
 def detectar_idioma(texto):
-    if isinstance(texto, str):  # Verificar si el texto es una cadena
+    #COMPRUEBA QUE EL TEXTO ES STRING
+    #SI EL TEXTO NO ES STRING O NO SE DETECTA UN IDIOMA SE DEVUELVE DESCONOCIDO
+    #ESTO PUEDE PASAR SI EL TEXTO ESTÁ EN VARIAS IDIOMAS, EN IDIOMAS POCO COMUNES,
+    #ES MUY CORTO O CONTIENE CARACTERES ESPECIALES ABUNDANTES, POR EJEMPLO.
+    if isinstance(texto, str):
         try:
             codigo_idioma = detect(texto)
             nombre_idioma = langcodes.Language.get(codigo_idioma).display_name()
@@ -16,12 +18,12 @@ def detectar_idioma(texto):
         except LangDetectException:
             return 'desconocido'
     else:
-        return 'desconocido'  # Devolver 'no_texto' si no es una cadena
+        return 'desconocido'
 
-# Crear una nueva columna 'idioma' aplicando la función a la columna de texto
+#NUEVA COLUMNA DE IDIOMA
 df['idioma'] = df['texto'].apply(detectar_idioma)
 
-# Guardar el DataFrame con la nueva columna en un nuevo archivo CSV
+#CSV DESTINO DEL NUEVO DATAFRAME
 df.to_csv('C:/Users/pvill/OneDrive/Documentos/TFG INTEGRADO/paolo_metadata_11.csv', index=False)
 
 print("Archivo procesado y guardado con éxito.")

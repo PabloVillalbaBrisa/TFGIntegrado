@@ -1,12 +1,10 @@
 import pandas as pd
 
-# Cargar el archivo CSV
+
 df = pd.read_csv('C:/Users/pvill/OneDrive/Documentos/TFG INTEGRADO/paolo_metadata_2.csv')
 
-# Lista de palabras a buscar
 palabras = ['Nike', 'Wilson', 'Yonex', 'Adidas', 'Asics', 'Head']
 
-# Crear nuevas columnas con valores iniciales de 0
 for palabra in palabras:
     df[palabra] = 0
 

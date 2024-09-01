@@ -8,10 +8,12 @@ import os
 import random
 
 options = Options()
+#DRIVER DE SELENIUM
 driver = webdriver.Chrome(options=options)
 
 
-# Función para limpiar y convertir el texto
+#ESTA FUNCIÓN LIMPIA EL TEXTO, CONVIERTE LOS NÚMEROS EN NOTACIÓN K A MILES
+# Y LOS NÚMEROS EN NOTACIÓN M A MILLONES
 def clean_text(text):
     text = text.replace(',', '').replace('.', '')
     text = re.sub(r'[^\dKM]', '', text)
@@ -23,12 +25,12 @@ def clean_text(text):
         return text
 
 
-# Función para obtener la información del perfil
+#ESTA FUNCIÓN OBTIENE EL PERFIL DEL USUARIO
 def get_profile_info(username):
     url = f'https://www.instagram.com/{username}/'
     driver.get(url)
 
-    time.sleep(5)  # Esperar a que la página cargue completamente
+    time.sleep(5)
 
     html_doc = driver.page_source
     soup = BeautifulSoup(html_doc, 'html.parser')
@@ -36,7 +38,7 @@ def get_profile_info(username):
     profile_data = {}
     profile_data['username'] = username
 
-    # Usar selectores CSS más específicos para encontrar los datos correctos
+    #USAMOS BEAUTIFULSOUP PARA SELECCIONAR LOS ELEMENTOS QUE QUEREMOS SCRAPEAR
     try:
         stats = soup.select('ul.x78zum5 li.xl565be button._acan span._ac2a')
         profile_data['posts'] = clean_text(stats[0].text) if len(stats) > 0 else 'N/A'
@@ -51,13 +53,14 @@ def get_profile_info(username):
     return profile_data
 
 
-# Cargar el archivo CSV original
+#CARGA DEL CSV
 file_path = 'C:/Users/pvill/OneDrive/Documentos/TFG INTEGRADO/paolo_metadata_8.csv'
 data = pd.read_csv(file_path)
 
+#CARGA DE LA LISTA DE USUARIOS
 usernames_list = data['username'].unique().tolist()
 
-# Cargar resultados parciales si existen
+#EN ESTE CSV VAMOS GUARDANDO LOS DATOS DE LAS ITERACIONES
 output_path = 'C:/Users/pvill/OneDrive/Documentos/TFG INTEGRADO/provisional.csv'
 
 if os.path.exists(output_path):
@@ -67,31 +70,32 @@ else:
     processed_data = pd.DataFrame(columns=['username', 'posts', 'followers', 'following'])
     processed_usernames = []
 
-# Iterar sobre cada username en la lista
+#SE VAN EXAMINANDO LOS USUARIOS
 for username in usernames_list:
+    #LOS USUARIOS PROCESADOS SE SALTAN
     if username in processed_usernames:
-        continue  # Saltar los usernames que ya han sido procesados
+        continue
 
     profile_info = get_profile_info(username)
     profile_info_df = pd.DataFrame([profile_info])
     processed_data = pd.concat([processed_data, profile_info_df], ignore_index=True)
 
-    # Guardar resultados parciales
+    #GUARDADO DE LOS DATOS
     processed_data.to_csv(output_path, index=False)
-    # Imprimir el usuario procesado
+    #SE IMPRIME EL USUARIO PROCESADO
     print(f"Processed user: {username}")
-    # Esperar un tiempo aleatorio entre 60 y 120 segundos
+    #TIEMPO DE ESPERA PRUDENCIAL ENTRE 1 Y 2 MINS
     wait_time = random.randint(60, 120)
     time.sleep(wait_time)
 
-# Cerrar el driver de Selenium
+#SE CIERRA EL DRIVER DE SELENIUM
 driver.quit()
 
 # Guardar los datos completos en un nuevo archivo CSV
 final_output_path = 'C:/Users/pvill/OneDrive/Documentos/TFG INTEGRADO/followers_data.csv'
 processed_data.to_csv(final_output_path, index=False)
 
-# Mostrar los resultados
+#MOSTRAR LOS DATOS QUE SE HAN PROCESADO
 print(processed_data.head())
 
 
