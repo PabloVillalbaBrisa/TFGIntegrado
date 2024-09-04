@@ -53,6 +53,7 @@ Este repositorio contiene una serie de programas para realizar web scraping, des
 - **`01 analisis imagenes_LIWC.Rmd`**: Realiza la carga y preprocesamiento de datos, la exploración de variables categóricas, el preprocesamiento de variables continuas, el estudio de correlaciones, la exploración de variables continuas, la generación y la evaluación de los modelos 3 y 4.
 - **`script_LATEX_SIN_LIWC.Rmd`**: Hace lo mismo que `01 analisis imagenes.Rmd`, pero añade tablas de modelos adicionales y prepara dichas tablas para Latex. También prepara los gráficos para Latex.
 - **`script_LATEX_CON_LIWC.Rmd`**: Hace lo mismo que `01 analisis imagenes_LIWX.Rmd`, pero añade tablas de modelos adicionales y prepara dichas tablas para Latex. También prepara los gráficos para Latex.
+
 ## Entorno de Desarrollo
 
 Los programas han sido desarrollados y probados utilizando estos entornos:
@@ -63,7 +64,6 @@ Los programas han sido desarrollados y probados utilizando estos entornos:
 
 ## Requisitos
 
- 
 En PyCharm, se pueden instalar las dependencias usando pip de esta forma:
 
 ```bash
