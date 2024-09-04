@@ -43,6 +43,7 @@ Este repositorio contiene una serie de programas para realizar web scraping, des
 
 ### Programas de Concatenado de Columnas de Variables y Unión de Tablas
 
+- **`Merge.ipynb`**: Concatena las tablas de Instrumentos de tenis, Rostros, Emoción y Texto Detectado, a la tabla de metadatos.
 - **`ConcatenarCSV.py`**: Concatena archivos CSV.
 - **`concatFollowers.py`**: Añade las columnas de las variables de número de posts, seguidores y seguidos a un CSV.
 - **`csvsIdiomas.py`**: Genera un CSV con cada idioma detectado.
@@ -51,22 +52,7 @@ Este repositorio contiene una serie de programas para realizar web scraping, des
 
 - **`01 analisis imagenes.Rmd`**: Realiza la carga y preprocesamiento de datos, la exploración de variables categóricas, el preprocesamiento de variables continuas, el estudio de correlaciones, la exploración de variables continuas, la generación y la evaluación de los modelos 1 y 2.
 - **`01 analisis imagenes_LIWC.Rmd`**: Realiza la carga y preprocesamiento de datos, la exploración de variables categóricas, el preprocesamiento de variables continuas, el estudio de correlaciones, la exploración de variables continuas, la generación y la evaluación de los modelos 3 y 4.
-- **`script_LATEX_SIN_LIWC.Rmd`**: Hace lo mismo que `01 analisis imagenes.Rmd`, pero añade tablas de modelos adicionales y prepara dichas tablas para Latex. También prepara los gráficos para Latex.
-- **`script_LATEX_CON_LIWC.Rmd`**: Hace lo mismo que `01 analisis imagenes_LIWX.Rmd`, pero añade tablas de modelos adicionales y prepara dichas tablas para Latex. También prepara los gráficos para Latex.
 
-## Entorno de Desarrollo
 
-Los programas han sido desarrollados y probados utilizando estos entornos:
-
-- **PyCharm**
-- **RStudio**
-- **Google Colaboratory**
-
-## Requisitos
-
-En PyCharm, se pueden instalar las dependencias usando pip de esta forma:
-
-```bash
-pip install pandas 
 
  
