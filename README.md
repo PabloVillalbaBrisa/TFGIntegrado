@@ -17,7 +17,7 @@ Este repositorio contiene una serie de programas para realizar web scraping, des
 - **`MetadataExtractor.py`**: Descarga metadatos de los posts. Permite conectar con Instagram a través del nombre de los usuarios en los directorios generados en la descarga con `Instaloader.py`.
 - **`SingleExtractor.py`**: Mismo funcionamiento que `MetadataExtractor.py`, pero para algún jugador concreto que haya podido faltar.
 - **`SingleExtractor.py`**: Mismo funcionamiento que `Instaloader.py`, pero para algún jugador concreto que haya podido faltar.
-- 
+
 ### Extracción de conocimiento de las imágenes
 
 - **`TennisInstruments.ipynb`**: clasifica las imágenes según si aparecen instrumentos de tenis en ellas.
