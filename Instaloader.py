@@ -33,30 +33,30 @@ def descarga_posts_entre_fechas_incluidas(str_profile, dt_fecha_inicio, dt_fecha
     # guarda los posts entre las fechas indicadas (ambas inclusiva) y genera un archivo resumen en formato csv
     # devuelve el número de posts que se han grabado
 
-    # gestor de instagram
+    #GESTOR INSTALOADER
     L = Instaloader(compress_json=False, save_metadata=False)  # no queremos la información sobre el nodo de Instagram
     profile = Profile.from_username(L.context, str_profile)
     posts = profile.get_posts()
 
     lista_filas = []
 
-    # contador
+    #CONTADOR
     n = 0
     for post in takewhile(lambda p: p.date > dt_fecha_inicio,
                           dropwhile(lambda p: p.date > dt_fecha_final + timedelta(1), posts)):
 
-        # grabamos el post
+        #GRABA POST
         L.download_post(post, str_directorio)
 
-        # incrementamos el contador
+        #INCREMENTA CONTADR
         n += 1
 
-        # preparamos la tabla resumen
+        #TABLA
         fila = {}
-        fila['num'] = 0  # posteriormente lo actualizamos
+        fila['num'] = 0
         fila['post'] = post.date.strftime('%Y-%m-%d_%H-%M-%S_UTC')
         fila['shortcode'] = post.shortcode
-        # ajustamos la hora de UTC a horario en España
+        #HORARIO SPAIN
         dt_post_corregido = post.date + timedelta(hours=1)
         fila['fecha'] = dt_post_corregido.strftime('%Y-%m-%d')
         fila['hora'] = dt_post_corregido.strftime('%H:%M:%S')
@@ -98,11 +98,9 @@ def descarga_posts_entre_fechas_incluidas(str_profile, dt_fecha_inicio, dt_fecha
 
         lista_filas.append(fila)
 
-    # actualizamos el indice de los posts y guardamos el resumen
+    #GUARDAR TABLA RESUMEN
     for n_fila, fila in enumerate(reversed(lista_filas)):
-        # Actualiza el número de la fila
         fila['num'] = n_fila + 1
-        # Escribe la fila al archivo CSV destino
         writer_csv = csv.DictWriter(destino_csv, fieldnames=columns)
         writer_csv.writerows(reversed(lista_filas))
     return n
@@ -115,8 +113,8 @@ INICIO = datetime(2023, 1, 1)
 FINAL = datetime(2023, 12, 31)
 
 # INICIO DE SESION EN INSTAGRAM
-user = 'pwindTennis2024'
-password = 'paoloposts2024'
+user = '********'
+password = '********'
 loader = Instaloader()
 loader.login(user, password)
 if loader.context.is_logged_in:
@@ -124,7 +122,6 @@ if loader.context.is_logged_in:
 else:
     print("No se ha podido iniciar sesión.")
 
-# Nombres de las columnas del CSV
 columns = ['player', 'num', 'post', 'shortcode', 'fecha', 'hora', 'video', 'likes', 'comentarios', 'texto',
            'hashtags', 'geotags', 'is_sponsored', 'sponsor_users']
 

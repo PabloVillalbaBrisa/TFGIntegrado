@@ -9,10 +9,9 @@ base_directory = 'C:/Users/pvill/PycharmProjects/TFG'
 
 output_csv = 'C:/Users/pvill/OneDrive/Documentos/TFG INTEGRADO/metadata_limpio.csv'
 
-# Configurar Instaloader
 L = Instaloader(compress_json=False, save_metadata=False)
-user = 'moonveilren18'
-password = 'rellana19'
+user = '********'
+password = '********'
 def iniciar_sesion():
     L.login(user, password)
     if L.context.is_logged_in:
@@ -23,26 +22,21 @@ def iniciar_sesion():
 
 iniciar_sesion()
 
-usuario_especifico = 'niki_kpoonacha'
+usuario_especifico = 'player'
 
-# Inicializar CSV en modo 'append'
 with open(output_csv, 'a', newline='', encoding='utf-8') as csvfile:
     fieldnames = ['username', 'post', 'shortcode', 'fecha', 'hora', 'video', 'likes', 'comentarios', 'texto', 'hashtags', 'is_sponsored', 'sponsors']
     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
-    # Si el archivo CSV está vacío, escribir los encabezados
     if os.path.getsize(output_csv) == 0:
         writer.writeheader()
 
-    # Obtener el perfil del usuario
     try:
         profile = Profile.from_username(L.context, usuario_especifico)
         print(f"Perfil obtenido para {usuario_especifico}")
 
-        # Almacenar los posts del perfil en una variable
         user_posts = list(profile.get_posts())
 
-        # Ruta del directorio del usuario
         user_directory = os.path.join(base_directory, usuario_especifico)
 
         for image_file in os.listdir(user_directory):
@@ -52,10 +46,8 @@ with open(output_csv, 'a', newline='', encoding='utf-8') as csvfile:
                     continue
                 print(f"Procesando imagen: {image_file}")
                 try:
-                    # Buscar el post correspondiente a la imagen
                     for post in user_posts:
                         if post.date.strftime('%Y-%m-%d_%H-%M-%S_UTC') in image_file:
-                            # Obtener los metadatos del post
                             is_sponsored = False
                             sponsors = []
                             try:
@@ -78,11 +70,9 @@ with open(output_csv, 'a', newline='', encoding='utf-8') as csvfile:
                                 'is_sponsored': is_sponsored,
                                 'sponsors': '; '.join(sponsors)
                             }
-                            # Escribir los metadatos en el CSV
                             writer.writerow(post_data)
-                            # Esperar un tiempo aleatorio entre 1 y 20 segundos entre posts
                             time.sleep(random.uniform(1, 20))
-                            break  # Salir del bucle después de encontrar el post correspondiente
+                            break
                 except instaloader.exceptions.QueryReturnedNotFoundException:
                     print(f"Post no encontrado para {usuario_especifico} con imagen {image_file}")
                 except instaloader.exceptions.LoginRequiredException:
@@ -91,7 +81,7 @@ with open(output_csv, 'a', newline='', encoding='utf-8') as csvfile:
                 except Exception as e:
                     if 'redirected to login' in str(e).lower() or '400' in str(e).lower():
                         print("Detectado redireccionamiento a la página de inicio de sesión. Deteniendo el programa.")
-                        exit()  # Detener el programa
+                        exit()
                     elif '401' in str(e).lower():
                         exit()
                     else:

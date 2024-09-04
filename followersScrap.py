@@ -91,7 +91,6 @@ for username in usernames_list:
 #SE CIERRA EL DRIVER DE SELENIUM
 driver.quit()
 
-# Guardar los datos completos en un nuevo archivo CSV
 final_output_path = 'C:/Users/pvill/OneDrive/Documentos/TFG INTEGRADO/followers_data.csv'
 processed_data.to_csv(final_output_path, index=False)
 
