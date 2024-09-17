@@ -2,7 +2,7 @@
 
 Mi nombre es Pablo Villalba Brisa, y soy estudiante del Doble Grado en Ingeniería Informática y Administración de Empresas. Mi interés en programación se focaliza en la minería de datos y la inteligencia artificial en Python, aunque también tengo experiencia en el desarrollo de código en R para análisis estadístico y visualización de datos.
 
-Este repositorio contiene una serie de programas para realizar web scraping, descargar posts de Instagram, extraer conocimiento de imágenes, preparar datos, y realizar análisis en R. Dichos programas están organizados en diferentes secciones según su fin.
+Este repositorio contiene una serie de programas para realizar web scraping, descargar posts de Instagram, extraer conocimiento de imágenes, preparar datos, y realizar análisisn estadístico en R. Dichos programas están organizados en diferentes secciones según su fin.
 
 ## Código del TFG Integrado:
 
