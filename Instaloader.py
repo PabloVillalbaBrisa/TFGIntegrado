@@ -125,7 +125,7 @@ else:
 columns = ['player', 'num', 'post', 'shortcode', 'fecha', 'hora', 'video', 'likes', 'comentarios', 'texto',
            'hashtags', 'geotags', 'is_sponsored', 'sponsor_users']
 
-#PARA CONTROLAR QUE CUENTAS SE VAN A VISITAR, CADA EJECUCIÓN EXAMINA 15 ANTES DE GUARDAR EN CSV, EN TOTAL SON 507 CUENTAS
+#PARA CONTROLAR QUE CUENTAS SE VAN A VISITAR
 #min_point = 0 max_point = 15
 #min_point = 15 max_point = 30
 #min_point = 30 max_point = 45
